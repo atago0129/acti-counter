@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>アクティカウンター</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <h1>アクティカウンター</h1>
+      <section class="today" aria-live="polite">
+        <span class="label">今日の回数</span>
+        <strong id="current-count">0</strong><span class="limit"> / 100回</span>
+      </section>
+      <form id="start-count-form">
+        <label for="start-count">開始回数（0〜100）</label>
+        <input id="start-count" name="start-count" type="number" min="0" max="100" step="1" required>
+        <button type="submit">開始回数を保存</button>
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+      </form>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
