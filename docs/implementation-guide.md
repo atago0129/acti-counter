@@ -22,7 +22,7 @@
 - `https://acti-island.com/typing`
 - `https://acti-island.com/typing/` 以下の任意のパス
 
-Chrome の `matches` だけに頼らず、コンテンツスクリプト側でも `location.pathname === "/typing" || location.pathname.startsWith("/typing/")` を確認する。
+対象サイトは SPA で、`/typing` 以外のページからページを読み込み直さずに遷移してくることがある。そのためコンテンツスクリプトは `https://acti-island.com/*` 全体に注入し、`location.pathname === "/typing" || location.pathname.startsWith("/typing/")` のときだけパネルを表示する。パス判定と結果画面の判定は、DOM の変化（`MutationObserver`）と `popstate` をきっかけに再実行する。
 
 ### カウンター
 
@@ -75,11 +75,11 @@ Chrome の `matches` だけに頼らず、コンテンツスクリプト側で�
 ### 結果ページの検知とカウント
 
 - ページ内に「今回のタイピング結果」が表示されていることを結果ページの条件とする。
-- サンプルでは `.title_text-result` 内に該当文言が存在するため、まず同要素を検査する。
+- SPA 版では `<p class="TypingPlayResult-module__<ハッシュ>__typingResult_titleTextResult">` 内に該当文言が存在する。ハッシュ部分はビルドごとに変わるため、`[class*='typingResult_titleTextResult']` の部分一致で検査する。旧サイトの `.title_text-result` も引き続き検査する。
 - サンプルと将来の軽微な DOM 差分に備え、必要に応じて見出し要素のテキストもフォールバック検査する。ただし、ページ全体の単純な文字列検索だけにはしない。
 - 通常のページ読み込みでは、コンテンツスクリプトの初期実行時（`document_idle`）に一度検知する。
+- SPA 版ではページを読み込み直さずに結果画面へ切り替わるため、`MutationObserver` と `popstate` をきっかけに結果見出しの有無を再判定し、変化したときだけ `PAGE_READY` を送る。
 - 戻る・進む操作で Back/Forward Cache からページが復元された場合は、`pageshow` イベントの `event.persisted === true` を検知し、現在の結果見出しの有無を `PAGE_READY` で再通知する。
-- DOM 更新を監視する `MutationObserver` は使用しない。SPA 的に同一ドキュメント内で後から結果が出現するケースは対象外とする。
 - 同じブラウザセッション内で、同じ結果表示をリロードしただけでは重複カウントしない。
 - 結果ページから別のページへ移動して結果表示がいったん非表示になった後、再び結果ページを表示した場合は 1 回加算する。
 - URL は結果の識別子として使わない。同じテストで URL が同じでも、結果表示の状態遷移を基準にする。
@@ -167,9 +167,9 @@ docs/
 - `background.service_worker`: `background/service-worker.js`
 - `permissions`: `storage`, `alarms`, `webNavigation`
 - `host_permissions` は指定しない。
-- `content_scripts.matches` は `https://acti-island.com/typing` と `https://acti-island.com/typing/*` だけを指定し、`content/content-script.js` を `document_idle` で注入する。
+- `content_scripts.matches` は `https://acti-island.com/*` だけを指定し、`content/content-script.js` を `document_idle` で注入する。SPA 内の遷移に追従するため対象サイト全体を指定する。
 
-`tabs` 権限、`<all_urls>`、サイト全体へのホスト権限は使用しない。ページ内容へアクセスするのは、指定 URL に注入されたコンテンツスクリプトだけとする。
+`tabs` 権限と `<all_urls>` は使用しない。ページ内容へアクセスするのは、対象サイトに注入されたコンテンツスクリプトだけとし、`/typing` 配下以外ではパネルを表示せずメッセージも送らない。
 
 ### コンテンツスクリプト
 
@@ -188,6 +188,7 @@ docs/
 11. パネルヘッダーの Pointer Events を監視してドラッグ移動させ、ドラッグ終了時に位置を保存する。
 12. `chrome.storage.local` の位置変更を購読し、他の対象タブへ保存位置を反映する。
 13. 設定フォームを検証して設定全体を `SAVE_SETTINGS` で保存し、`appState.settings` の変更を対象タブへ反映する。
+14. パネル下部に `chrome.runtime.getManifest().version` から取得したバージョンを `v0.2.0` の形式で表示し、反映されている拡張機能のバージョンを確認できるようにする。
 
 パネルのイベントはサイトへ漏らさない。ボタンのクリックがサイト側のリンクやフォーム操作を発火させないよう、必要に応じて `stopPropagation()` と `preventDefault()` を使う。
 

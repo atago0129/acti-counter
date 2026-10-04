@@ -184,15 +184,21 @@ function normalizeStopwatchState(rawState) {
   };
 }
 
-function isTargetUrl(url) {
+function isTargetSiteUrl(url) {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "https:" &&
-      parsed.hostname === "acti-island.com" &&
-      (parsed.pathname === "/typing" || parsed.pathname.startsWith("/typing/"));
+    return parsed.protocol === "https:" && parsed.hostname === "acti-island.com";
   } catch {
     return false;
   }
+}
+
+function isTargetUrl(url) {
+  if (!isTargetSiteUrl(url)) {
+    return false;
+  }
+  const { pathname } = new URL(url);
+  return pathname === "/typing" || pathname.startsWith("/typing/");
 }
 
 function isExtensionSender(sender) {
@@ -203,7 +209,9 @@ function isExtensionSender(sender) {
 function isContentSender(sender) {
   return Number.isInteger(sender?.tab?.id) &&
     sender.tab.id >= 0 &&
-    (!sender.url || isTargetUrl(sender.url));
+    // SPA 内の遷移では sender.url が最初に読み込んだ URL のまま更新されないため、パスは見ずにサイトだけ確認する。
+    // /typing 配下かどうかはコンテンツスクリプト側で判定している
+    (!sender.url || isTargetSiteUrl(sender.url));
 }
 
 async function loadAppState(todayKey = getDateKey()) {
@@ -291,7 +299,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   });
 });
 
-chrome.webNavigation.onCommitted.addListener((details) => {
+// SPA 内の遷移（history.pushState）は onCommitted が発火しないため onHistoryStateUpdated でも扱う
+function clearTabStateOnLeave(details) {
   if (details.frameId !== 0 || details.tabId < 0 || isTargetUrl(details.url)) {
     return;
   }
@@ -306,7 +315,10 @@ chrome.webNavigation.onCommitted.addListener((details) => {
   }).catch((error) => {
     console.error("タブ状態のクリアに失敗しました", error);
   });
-});
+}
+
+chrome.webNavigation.onCommitted.addListener(clearTabStateOnLeave);
+chrome.webNavigation.onHistoryStateUpdated.addListener(clearTabStateOnLeave);
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   enqueueMutation(async () => {
