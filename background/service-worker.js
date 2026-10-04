@@ -291,7 +291,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   });
 });
 
-chrome.webNavigation.onCommitted.addListener((details) => {
+// SPA 内の遷移（history.pushState）は onCommitted が発火しないため onHistoryStateUpdated でも扱う
+function clearTabStateOnLeave(details) {
   if (details.frameId !== 0 || details.tabId < 0 || isTargetUrl(details.url)) {
     return;
   }
@@ -306,7 +307,10 @@ chrome.webNavigation.onCommitted.addListener((details) => {
   }).catch((error) => {
     console.error("タブ状態のクリアに失敗しました", error);
   });
-});
+}
+
+chrome.webNavigation.onCommitted.addListener(clearTabStateOnLeave);
+chrome.webNavigation.onHistoryStateUpdated.addListener(clearTabStateOnLeave);
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   enqueueMutation(async () => {

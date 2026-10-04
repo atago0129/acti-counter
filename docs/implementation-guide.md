@@ -22,7 +22,7 @@
 - `https://acti-island.com/typing`
 - `https://acti-island.com/typing/` 以下の任意のパス
 
-Chrome の `matches` だけに頼らず、コンテンツスクリプト側でも `location.pathname === "/typing" || location.pathname.startsWith("/typing/")` を確認する。
+対象サイトは SPA で、`/typing` 以外のページからページを読み込み直さずに遷移してくることがある。そのためコンテンツスクリプトは `https://acti-island.com/*` 全体に注入し、`location.pathname === "/typing" || location.pathname.startsWith("/typing/")` のときだけパネルを表示する。パス判定と結果画面の判定は、DOM の変化（`MutationObserver`）と `popstate` をきっかけに再実行する。
 
 ### カウンター
 
@@ -167,9 +167,9 @@ docs/
 - `background.service_worker`: `background/service-worker.js`
 - `permissions`: `storage`, `alarms`, `webNavigation`
 - `host_permissions` は指定しない。
-- `content_scripts.matches` は `https://acti-island.com/typing` と `https://acti-island.com/typing/*` だけを指定し、`content/content-script.js` を `document_idle` で注入する。
+- `content_scripts.matches` は `https://acti-island.com/*` だけを指定し、`content/content-script.js` を `document_idle` で注入する。SPA 内の遷移に追従するため対象サイト全体を指定する。
 
-`tabs` 権限、`<all_urls>`、サイト全体へのホスト権限は使用しない。ページ内容へアクセスするのは、指定 URL に注入されたコンテンツスクリプトだけとする。
+`tabs` 権限と `<all_urls>` は使用しない。ページ内容へアクセスするのは、対象サイトに注入されたコンテンツスクリプトだけとし、`/typing` 配下以外ではパネルを表示せずメッセージも送らない。
 
 ### コンテンツスクリプト
 

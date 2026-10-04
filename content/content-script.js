@@ -7,13 +7,10 @@
   const STOPWATCH_STATE_KEY = "stopwatchState";
   const MAX_COUNT = 100;
   const DEFAULT_TARGET_COUNT = 10;
+  const PAGE_CHECK_DELAY_MS = 200;
 
   function isTargetPath(pathname) {
     return pathname === "/typing" || pathname.startsWith("/typing/");
-  }
-
-  if (!isTargetPath(window.location.pathname)) {
-    return;
   }
 
   if (document.querySelector("[data-acti-counter-root]")) {
@@ -567,6 +564,8 @@
   let requestInProgress = false;
   let lastFocusedElement = null;
   let isDraggingPanel = false;
+  let lastReportedIsResult = null;
+  let pageCheckTimer = null;
 
   function normalizePanelPosition(value) {
     if (!value || typeof value !== "object") {
@@ -900,10 +899,12 @@
   }
 
   async function notifyPageReady() {
+    const isResult = detectResultPage();
+    lastReportedIsResult = isResult;
     try {
       const response = await sendMessage({
         type: "PAGE_READY",
-        isResult: detectResultPage()
+        isResult
       });
       renderCount(response.count);
       renderTargetCount(response.settings?.targetCount);
@@ -913,6 +914,43 @@
     } catch (error) {
       setStatus(error.message);
     }
+  }
+
+  // SPA ではページを読み込み直さずに画面が切り替わるため、DOM の変化をきっかけに
+  // タイピングページかどうかでパネルの表示を切り替え、結果画面の出入りを通知する
+  function syncPage() {
+    if (!isTargetPath(window.location.pathname)) {
+      ui.host.style.display = "none";
+      lastReportedIsResult = null;
+      return;
+    }
+
+    ui.host.style.display = "";
+    if (detectResultPage() !== lastReportedIsResult) {
+      notifyPageReady();
+    }
+  }
+
+  function schedulePageCheck() {
+    if (pageCheckTimer !== null) {
+      return;
+    }
+    pageCheckTimer = window.setTimeout(() => {
+      pageCheckTimer = null;
+      syncPage();
+    }, PAGE_CHECK_DELAY_MS);
+  }
+
+  function observePage() {
+    const observer = new MutationObserver(schedulePageCheck);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "hidden"]
+    });
+    window.addEventListener("popstate", schedulePageCheck);
   }
 
   function addSafeClickListener(element, handler) {
@@ -991,7 +1029,8 @@
     if (!event.persisted) {
       return;
     }
-    notifyPageReady();
+    lastReportedIsResult = null;
+    syncPage();
     sendMessage({ type: "GET_STOPWATCH_STATE" })
       .then((response) => syncStopwatch(response.stopwatchState))
       .catch(() => {});
@@ -1020,5 +1059,6 @@
   syncStopwatch(DEFAULT_STOPWATCH_STATE);
   enablePanelDragging();
   restorePanelPosition();
-  notifyPageReady();
+  syncPage();
+  observePage();
 })();
