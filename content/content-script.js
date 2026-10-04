@@ -23,8 +23,22 @@
     elapsedMs: 0
   });
 
+  // 拡張機能の再読み込み・更新後もページに残った古いコンテンツスクリプトでは chrome.runtime.id が無くなる
+  function isExtensionContextValid() {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch {
+      return false;
+    }
+  }
+
   function sendMessage(message) {
     return new Promise((resolve, reject) => {
+      if (!isExtensionContextValid()) {
+        teardown();
+        reject(new Error("拡張機能が更新されました。ページを再読み込みしてください"));
+        return;
+      }
       chrome.runtime.sendMessage(message, (response) => {
         const runtimeError = chrome.runtime.lastError;
         if (runtimeError) {
@@ -60,7 +74,11 @@
   }
 
   function detectResultPage() {
-    const preferred = Array.from(document.querySelectorAll(".title_text-result"));
+    // SPA 版は CSS Modules のハッシュ付きクラス名（例: TypingPlayResult-module__876cbW__typingResult_titleTextResult）を使うため、
+    // ビルドごとに変わるハッシュ部分を避けて部分一致で探す。.title_text-result は旧サイトの見出し
+    const preferred = Array.from(document.querySelectorAll(
+      "[class*='typingResult_titleTextResult'], .title_text-result"
+    ));
     const fallback = Array.from(document.querySelectorAll("h1, h2, h3"));
     return preferred.concat(fallback).some((element) => (
       isVisible(element) && normalizeText(element.textContent).includes(RESULT_TITLE)
@@ -294,6 +312,14 @@
           text-align: center;
         }
 
+        .version {
+          margin: 0;
+          padding: 4px 14px 6px;
+          color: rgba(66, 33, 11, 0.55);
+          font-size: 10px;
+          text-align: right;
+        }
+
         .overlay {
           position: fixed;
           inset: 0;
@@ -496,6 +522,7 @@
           </div>
           <p class="status" role="status" aria-live="polite"></p>
         </div>
+        <p class="version"></p>
       </section>
       <div class="overlay settings-history-overlay" hidden>
         <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-history-title">
@@ -539,6 +566,7 @@
       panelHeader: shadowRoot.querySelector(".panel-header"),
       count: shadowRoot.querySelector(".count"),
       targetCount: shadowRoot.querySelector(".target-count"),
+      version: shadowRoot.querySelector(".version"),
       stopwatchTime: shadowRoot.querySelector(".stopwatch-time"),
       startButton: shadowRoot.querySelector(".start-button"),
       stopButton: shadowRoot.querySelector(".stop-button"),
@@ -566,6 +594,7 @@
   let isDraggingPanel = false;
   let lastReportedIsResult = null;
   let pageCheckTimer = null;
+  let pageObserver = null;
 
   function normalizePanelPosition(value) {
     if (!value || typeof value !== "object") {
@@ -919,6 +948,11 @@
   // SPA ではページを読み込み直さずに画面が切り替わるため、DOM の変化をきっかけに
   // タイピングページかどうかでパネルの表示を切り替え、結果画面の出入りを通知する
   function syncPage() {
+    if (!isExtensionContextValid()) {
+      teardown();
+      return;
+    }
+
     if (!isTargetPath(window.location.pathname)) {
       ui.host.style.display = "none";
       lastReportedIsResult = null;
@@ -942,8 +976,8 @@
   }
 
   function observePage() {
-    const observer = new MutationObserver(schedulePageCheck);
-    observer.observe(document.body, {
+    pageObserver = new MutationObserver(schedulePageCheck);
+    pageObserver.observe(document.body, {
       childList: true,
       subtree: true,
       characterData: true,
@@ -951,6 +985,21 @@
       attributeFilter: ["class", "style", "hidden"]
     });
     window.addEventListener("popstate", schedulePageCheck);
+  }
+
+  // SPA ではページが読み込み直されないため、拡張機能との接続が切れた古いスクリプトは自分で監視を止めてパネルを外す
+  function teardown() {
+    if (pageObserver) {
+      pageObserver.disconnect();
+      pageObserver = null;
+    }
+    window.removeEventListener("popstate", schedulePageCheck);
+    if (pageCheckTimer !== null) {
+      window.clearTimeout(pageCheckTimer);
+      pageCheckTimer = null;
+    }
+    stopTicker();
+    ui.host.remove();
   }
 
   function addSafeClickListener(element, handler) {
@@ -1054,6 +1103,7 @@
     }
   });
 
+  ui.version.textContent = `v${chrome.runtime.getManifest().version}`;
   renderCount(0);
   renderTargetCount(DEFAULT_TARGET_COUNT);
   syncStopwatch(DEFAULT_STOPWATCH_STATE);
